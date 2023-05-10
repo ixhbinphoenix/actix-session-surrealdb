@@ -11,7 +11,6 @@ categories = ["web-programming::http-server", "web-programming::websocket", "net
 keyword = ["web", "actix", "surrealdb", "async", "session"]
 readme = "README.md"
 license = "MIT"
-license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
