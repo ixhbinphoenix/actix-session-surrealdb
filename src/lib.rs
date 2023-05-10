@@ -1,0 +1,207 @@
+mod dates;
+mod session_key;
+
+use std::collections::HashMap;
+
+use actix_session::storage::{LoadError, SaveError, SessionKey, SessionStore, UpdateError};
+use actix_web::cookie::time::Duration;
+use anyhow::{anyhow, Error};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use session_key::generate_session_key;
+use surrealdb::{
+    engine::remote::ws::Client, sql::{Id, Thing}, Surreal
+};
+use log::{debug, error, warn};
+
+use crate::dates::add_duration_to_current;
+
+pub type DBConnection = Surreal<Client>;
+
+#[derive(Clone)]
+pub struct SurrealSessionStore {
+    client: DBConnection,
+    tb: String,
+}
+
+impl SurrealSessionStore {
+    /// Creates a SurrealSessionStore from an existing and logged in connection
+    ///
+    /// This function does NOT check for signin status, namespace or database. It also doesn't
+    /// error if one of these are set up wrong.
+    /// Ensure that these are set correctly before using it.
+    ///
+    /// ## Example
+    ///
+    /// ```no_run
+    /// #[actix_web::main]
+    /// async fn main() -> io::Result<()> {
+    ///     let db = Surreal::new("ws://127.0.0.1:8000").await.unwrap();
+    ///
+    ///     db.signin({
+    ///         username: "root",
+    ///         password: "root"
+    ///     }).await.unwrap();
+    ///
+    ///     db.use_ns("test").use_db("test").await.unwrap();
+    ///
+    ///     let session_store = SurrealSessionStore::from_connection(db, "sessions");
+    /// }
+    /// ```
+    pub fn from_connection(db: DBConnection, tb: &str) -> SurrealSessionStore {
+        SurrealSessionStore {
+            client: db,
+            tb: tb.to_owned(),
+        }
+    }
+}
+
+pub(crate) type SessionState = HashMap<String, String>;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KeyRecord {
+    id: Thing,
+    token: String,
+    expiry: surrealdb::sql::Datetime,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct KeyRecordPatch {
+    token: Option<String>,
+    expiry: Option<surrealdb::sql::Datetime>,
+}
+
+#[async_trait::async_trait(?Send)]
+impl SessionStore for SurrealSessionStore {
+    async fn load(&self, session_key: &SessionKey) -> Result<Option<SessionState>, LoadError> {
+        debug!("Loading sessionstate from db..");
+        let thingy = Thing {
+            tb: self.tb.clone(),
+            id: Id::String(session_key.as_ref().to_owned()),
+        };
+
+        let res: Result<Option<KeyRecord>, surrealdb::Error> = self.client.select(thingy.clone()).await;
+
+        if res.is_err() {
+            error!("Reading database record failed!\n{}", res.unwrap_err());
+            return Err(LoadError::Other(anyhow!("Reading database record failed!")));
+        }
+
+        let record_opt = res.unwrap();
+        if record_opt.is_none() {
+            warn!("Reading database record failed! (Option is none)");
+            return Err(LoadError::Other(anyhow!("Reading database record failed!")));
+        }
+
+        let record = record_opt.unwrap();
+
+        if record.expiry.timestamp_millis() < Utc::now().timestamp_millis() {
+            let _: KeyRecord = self.client.delete(thingy).await.expect("Deleting database record failed!");
+            return Ok(None);
+        }
+
+        Ok(serde_json::from_str(&record.token)
+           .map_err(Into::into)
+           .map_err(LoadError::Deserialization)?)
+    }
+
+    async fn save(&self, session_state: SessionState, ttl: &Duration) -> Result<SessionKey, SaveError> {
+        let body = serde_json::to_string(&session_state).map_err(Into::into).map_err(SaveError::Serialization)?;
+        let session_key = generate_session_key();
+        let id = session_key.as_ref().to_owned();
+
+        let expiry_time: DateTime<Utc> = match add_duration_to_current(ttl) {
+            Some(a) => a,
+            None => {
+                return Err(SaveError::Other(anyhow!("Invalid duration length!")));
+            }
+        };
+
+        let res: Result<KeyRecord, surrealdb::Error> = self
+            .client
+            .create(self.tb.clone())
+            .content(KeyRecord {
+                id: Thing {
+                    tb: self.tb.clone(),
+                    id: Id::String(id),
+                },
+                token: body,
+                expiry: expiry_time.into(),
+            })
+            .await;
+
+        if res.is_err() {
+            return Err(SaveError::Other(anyhow!("Failed to create database record!")));
+        }
+
+        Ok(session_key)
+    }
+
+    async fn update(
+        &self, session_key: SessionKey, session_state: SessionState, ttl: &Duration,
+    ) -> Result<SessionKey, UpdateError> {
+        let body = serde_json::to_string(&session_state).map_err(Into::into).map_err(UpdateError::Serialization)?;
+
+        let id = session_key.as_ref().to_owned();
+        let thingy = Thing {
+            tb: self.tb.clone(),
+            id: Id::String(id),
+        };
+
+        let expiry_time: DateTime<Utc> = match add_duration_to_current(ttl) {
+            Some(a) => a,
+            None => {
+                return Err(UpdateError::Other(anyhow!("Invalid duration length!")));
+            }
+        };
+
+        let updated = KeyRecordPatch {
+            token: Some(body),
+            expiry: Some(expiry_time.into()),
+        };
+
+        let res: Result<KeyRecord, surrealdb::Error> = self.client.update(thingy).merge(updated).await;
+
+        if res.is_err() {
+            Err(UpdateError::Other(anyhow!("Failed to update database record!")))
+        } else {
+            Ok(session_key)
+        }
+    }
+
+    async fn update_ttl(&self, session_key: &SessionKey, ttl: &Duration) -> Result<(), Error> {
+        let id = session_key.as_ref().to_owned();
+        let thingy = Thing {
+            tb: self.tb.clone(),
+            id: Id::String(id),
+        };
+
+        if ttl.is_zero() || ttl.is_negative() {
+            self.client.delete(thingy).await.map_err(|_| anyhow!("Failed to delete database record"))
+        } else {
+            let expiry_time: DateTime<Utc> = match add_duration_to_current(ttl) {
+                Some(a) => a,
+                None => {
+                    return Err(anyhow!("Invalid duration length!"));
+                }
+            };
+
+            let updated = KeyRecordPatch {
+                token: None,
+                expiry: Some(expiry_time.into()),
+            };
+
+            self.client.update(thingy).merge(updated).await.map_err(|_| anyhow!("Failed to update database record"))
+        }
+    }
+
+    async fn delete(&self, session_key: &SessionKey) -> Result<(), Error> {
+        let id = session_key.as_ref().to_owned();
+        let thingy = Thing {
+            tb: self.tb.clone(),
+            id: Id::String(id),
+        };
+
+        self.client.delete(thingy).await.map_err(|_| anyhow!("Failed to delete database record"))
+    }
+}
