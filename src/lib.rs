@@ -1,3 +1,56 @@
+//! An actix_session [`actix_session::storage::SessionStore`] for [`surrealdb`]
+//!
+//! This crate implements the [`actix_session::storage::SessionStore`] for [`surrealdb`] allowing
+//! you to Store session state in a [`surrealdb`] database
+//!
+//! ## Example
+//! The [`SurrealSessionStore`] can be used just like any other [`actix_session::storage::SessionStore`]
+//! with the difference that it needs an already connected DBConnection
+//!
+//! ```
+//! use actix_session::{config::PersistentSession, SessionMiddleware};
+//! use actix_session_surrealdb::SurrealSessionStore;
+//! use actix_web::{cookie::{time::Duration, Key}, App, HttpServer};
+//! use surrealdb::{engine::remote::ws::Ws, opt::auth::Root, Surreal};
+//!
+//! #[actix_web::main]
+//! async fn main -> io::Result<()> {
+//!     let db = Surreal::new::<Ws>("127.0.0.1:8000").await.expect("DB to connect");
+//!
+//!     db.signin(Root {
+//!         username: "root",
+//!         password: "root"
+//!     })
+//!     .await
+//!     .expect("DB Credentials to be correct");
+//!
+//!     db.use_ns("test").use_db("test").await.unwrap();
+//!
+//!     HttpServer::new(move || {
+//!         App::new()
+//!             .wrap(
+//!                 SessionMiddleware::builder(
+//!                     SurrealSessionStore::from_connection(db.clone(), "sessions"),
+//!                     Key::generate()
+//!                 )
+//!                 .cookie_same_site(actix_web::cookie::SameSite::None)
+//!                 .cookie_secure(true)
+//!                 .cookie_http_only(true)
+//!                 .session_lifecycle(
+//!                     PersistentSession::default()
+//!                         .session_ttl_extension_policy(actix_session::config::TtlExtensionPolicy::OnStateChanges)
+//!                         .session_ttl(Duration::days(7)),
+//!                 )
+//!                 .build(),
+//!             )
+//!     })
+//!     .bind(("127.0.0.1", "8080"))?
+//!     .run()
+//!     .await
+//! }
+//! ```
+
+
 mod dates;
 mod session_key;
 
@@ -7,15 +60,16 @@ use actix_session::storage::{LoadError, SaveError, SessionKey, SessionStore, Upd
 use actix_web::cookie::time::Duration;
 use anyhow::{anyhow, Error};
 use chrono::{DateTime, Utc};
+use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 use session_key::generate_session_key;
 use surrealdb::{
     engine::remote::ws::Client, sql::{Id, Thing}, Surreal
 };
-use log::{debug, error, warn};
 
 use crate::dates::add_duration_to_current;
 
+/// SurrealDB Database Connection
 pub type DBConnection = Surreal<Client>;
 
 #[derive(Clone)]
@@ -26,6 +80,8 @@ pub struct SurrealSessionStore {
 
 impl SurrealSessionStore {
     /// Creates a SurrealSessionStore from an existing and logged in connection
+    ///
+    /// Takes the [DBConnection] and the database table to be used as args
     ///
     /// This function does NOT check for signin status, namespace or database. It also doesn't
     /// error if one of these are set up wrong.
@@ -58,8 +114,9 @@ impl SurrealSessionStore {
 
 pub(crate) type SessionState = HashMap<String, String>;
 
+/// Database record for the session tokens
 #[derive(Debug, Serialize, Deserialize)]
-pub struct KeyRecord {
+pub(crate) struct KeyRecord {
     id: Thing,
     token: String,
     expiry: surrealdb::sql::Datetime,
@@ -100,9 +157,7 @@ impl SessionStore for SurrealSessionStore {
             return Ok(None);
         }
 
-        Ok(serde_json::from_str(&record.token)
-           .map_err(Into::into)
-           .map_err(LoadError::Deserialization)?)
+        Ok(serde_json::from_str(&record.token).map_err(Into::into).map_err(LoadError::Deserialization)?)
     }
 
     async fn save(&self, session_state: SessionState, ttl: &Duration) -> Result<SessionKey, SaveError> {
