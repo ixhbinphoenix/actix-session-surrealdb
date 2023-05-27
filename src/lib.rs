@@ -60,7 +60,7 @@ use actix_session::storage::{LoadError, SaveError, SessionKey, SessionStore, Upd
 use actix_web::cookie::time::Duration;
 use anyhow::{anyhow, Error};
 use chrono::{DateTime, Utc};
-use log::{debug, error, warn};
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use session_key::generate_session_key;
 use surrealdb::{
@@ -251,12 +251,21 @@ impl SessionStore for SurrealSessionStore {
     }
 
     async fn delete(&self, session_key: &SessionKey) -> Result<(), Error> {
+        debug!("Deleting session from DB");
         let id = session_key.as_ref().to_owned();
         let thingy = Thing {
             tb: self.tb.clone(),
             id: Id::String(id),
         };
 
-        self.client.delete(thingy).await.map_err(|_| anyhow!("Failed to delete database record"))
+        let res = self.client.delete::<Option<KeyRecord>>(thingy).await.map_err(|_| anyhow!("Failed to delete database record"));
+        if res.is_ok() {
+            debug!("Deleting from DB worked");
+            return Ok(());
+        } else {
+            let err = res.unwrap_err();
+            debug!("Error deleting from DB: {:?}", err);
+            return Err(err);
+        }
     }
 }
