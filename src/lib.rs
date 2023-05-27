@@ -146,8 +146,8 @@ impl SessionStore for SurrealSessionStore {
 
         let record_opt = res.unwrap();
         if record_opt.is_none() {
-            warn!("Reading database record failed! (Option is none)");
-            return Err(LoadError::Other(anyhow!("Reading database record failed!")));
+            debug!("Reading database record failed! (Option is none)");
+            return Ok(None);
         }
 
         let record = record_opt.unwrap();
