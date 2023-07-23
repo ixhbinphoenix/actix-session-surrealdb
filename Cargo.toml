@@ -6,7 +6,7 @@ description = "Surrealdb SessionStore for actix-session"
 authors = [
   "ixhbinphoenix <phoenixgames.phoenix13@gmail.com>"
 ]
-repository = "https://github.com/ixhbinphoenix-actix-session-surrealdb"
+repository = "https://github.com/ixhbinphoenix/actix-session-surrealdb"
 categories = ["web-programming::http-server", "web-programming::websocket", "network-programming", "database"]
 keyword = ["web", "actix", "surrealdb", "async", "session"]
 readme = "README.md"
