@@ -4,11 +4,11 @@ version = "0.1.3"
 edition = "2021"
 description = "Surrealdb SessionStore for actix-session"
 authors = [
-  "ixhbinphoenix <phoenixgames.phoenix13@gmail.com>"
+  "ixhbinphoenix <phoenix@ixhby.dev>"
 ]
 repository = "https://github.com/ixhbinphoenix/actix-session-surrealdb"
 categories = ["web-programming::http-server", "web-programming::websocket", "network-programming", "database"]
-keyword = ["web", "actix", "surrealdb", "async", "session"]
+keywords = ["web", "actix", "surrealdb", "async", "session"]
 readme = "README.md"
 license = "MIT"
 
