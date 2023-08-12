@@ -27,10 +27,12 @@ async fn main() -> io::Result<()> {
 
     let session_store = SurrealSessionStore::from_connection(db, "sessions");
 
+    let key = Key::generate();
+
     HttpServer::new(move || {
         App::new()
             .wrap(
-                SessionMiddleware::builder(session_store.clone(), Key::generate())
+                SessionMiddleware::builder(session_store.clone(), key.clone())
                    .cookie_same_site(actix_web::cookie::SameSite::None)
                    .cookie_secure(true)
                    .cookie_http_only(true)
