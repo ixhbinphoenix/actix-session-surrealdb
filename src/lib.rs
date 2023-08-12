@@ -26,12 +26,14 @@
 //!
 //!     db.use_ns("test").use_db("test").await.unwrap();
 //!
+//!     let key = Key::generate();
+//!
 //!     HttpServer::new(move || {
 //!         App::new()
 //!             .wrap(
 //!                 SessionMiddleware::builder(
 //!                     SurrealSessionStore::from_connection(db.clone(), "sessions"),
-//!                     Key::generate()
+//!                     key.clone()
 //!                 )
 //!                 .cookie_same_site(actix_web::cookie::SameSite::None)
 //!                 .cookie_secure(true)
