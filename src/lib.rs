@@ -155,7 +155,7 @@ impl SessionStore for SurrealSessionStore {
         let record = record_opt.unwrap();
 
         if record.expiry.timestamp_millis() < Utc::now().timestamp_millis() {
-            let _: KeyRecord = self.client.delete(thingy).await.expect("Deleting database record failed!");
+            let _: Option<KeyRecord> = self.client.delete(thingy).await.expect("Deleting database record failed!");
             return Ok(None);
         }
 
@@ -174,7 +174,7 @@ impl SessionStore for SurrealSessionStore {
             }
         };
 
-        let res: Result<KeyRecord, surrealdb::Error> = self
+        let res: Result<Vec<KeyRecord>, surrealdb::Error> = self
             .client
             .create(self.tb.clone())
             .content(KeyRecord {
@@ -217,7 +217,7 @@ impl SessionStore for SurrealSessionStore {
             expiry: Some(expiry_time.into()),
         };
 
-        let res: Result<KeyRecord, surrealdb::Error> = self.client.update(thingy).merge(updated).await;
+        let res: Result<Option<KeyRecord>, surrealdb::Error> = self.client.update(thingy).merge(updated).await;
 
         if res.is_err() {
             Err(UpdateError::Other(anyhow!("Failed to update database record!")))
@@ -234,7 +234,8 @@ impl SessionStore for SurrealSessionStore {
         };
 
         if ttl.is_zero() || ttl.is_negative() {
-            self.client.delete(thingy).await.map_err(|_| anyhow!("Failed to delete database record"))
+            let _: Option<KeyRecord> = self.client.delete(thingy).await.map_err(|_| anyhow!("Failed to delete database record"))?;
+            Ok(())
         } else {
             let expiry_time: DateTime<Utc> = match add_duration_to_current(ttl) {
                 Some(a) => a,
@@ -248,7 +249,8 @@ impl SessionStore for SurrealSessionStore {
                 expiry: Some(expiry_time.into()),
             };
 
-            self.client.update(thingy).merge(updated).await.map_err(|_| anyhow!("Failed to update database record"))
+            let _: Option<KeyRecord> = self.client.update(thingy).merge(updated).await.map_err(|_| anyhow!("Failed to update database record"))?;
+            Ok(())
         }
     }
 
