@@ -1,0 +1,15 @@
+name: Cargo check
+on: push, pull_request
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Fetch dependencies
+      run: cargo fetch
+    - name: Run cargo check
+      run: cargo check --all-targets --all-features
