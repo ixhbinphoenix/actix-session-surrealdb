@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    assignees:
+      - "ixhbinphoenix"
+    commit-message:
+      prefix: "chore(actions)"
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "master"
+    assignees:
+      - "ixhbinphoenix"
+    commit-message:
+      prefix: "chore(deps)"
