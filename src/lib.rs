@@ -130,7 +130,6 @@ pub(crate) struct KeyRecordPatch {
     expiry: Option<surrealdb::sql::Datetime>,
 }
 
-#[async_trait::async_trait(?Send)]
 impl SessionStore for SurrealSessionStore {
     async fn load(&self, session_key: &SessionKey) -> Result<Option<SessionState>, LoadError> {
         debug!("Loading sessionstate from db..");

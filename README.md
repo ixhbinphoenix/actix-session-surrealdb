@@ -10,6 +10,8 @@ but this is more "best-effort" support than full.
 
 This library is not tested very well, so use at your own risk. You also probably shouldn't use this in your production, but I'm not your Boss so do as you wish.
 
+Minimum Supported Rust Version (MSRV): `1.75`
+
 ## Example Usage
 
 You can use the `SurrealSessionStore` similarly to the `CookieSessionStore` or `RedisSessionStore`, but you'll have to connect and check your database first
