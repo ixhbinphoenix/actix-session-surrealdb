@@ -1,5 +1,5 @@
 use actix_session::storage::SessionKey;
-use rand::{distributions::Alphanumeric, rngs::OsRng, Rng as _};
+use rand::distr::{Alphanumeric, SampleString};
 
 
 // Stolen from actix/actix-extras/actix-session
@@ -8,7 +8,6 @@ use rand::{distributions::Alphanumeric, rngs::OsRng, Rng as _};
 // Would have just imported their code, but it's pub(crate).
 // Originally Licensed under Apache-2.0 and MIT
 pub(crate) fn generate_session_key() -> SessionKey {
-    let value = std::iter::repeat(()).map(|()| OsRng.sample(Alphanumeric)).take(64).collect::<Vec<_>>();
-
-    String::from_utf8(value).unwrap().try_into().unwrap()
+    let string = Alphanumeric.sample_string(&mut rand::rng(), 64);
+    string.try_into().expect("Failed to create SessionKey from random string")
 }
